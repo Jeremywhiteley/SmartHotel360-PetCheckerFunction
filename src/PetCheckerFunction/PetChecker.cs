@@ -1,14 +1,17 @@
+using Gremlin.Net.Driver;
+using Gremlin.Net.Driver.Messages;
+using Gremlin.Net.Structure.IO.GraphSON;
+using Microsoft.Azure.Documents;
+using Microsoft.Azure.Documents.Client;
+using Microsoft.Azure.WebJobs;
+using Microsoft.Azure.WebJobs.Host;
+using Microsoft.ProjectOxford.Vision;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Threading.Tasks;
-using Microsoft.Azure.Documents;
-using Microsoft.Azure.Documents.Client;
-using Microsoft.Azure.WebJobs;
-using Microsoft.Azure.WebJobs.Host;
-using Microsoft.ProjectOxford.Vision;
 
 namespace PetCheckerFunction
 {
@@ -16,7 +19,7 @@ namespace PetCheckerFunction
     {
         [FunctionName("PetChecker")]
         public static async Task RunPetChecker(
-            [CosmosDBTrigger("pets", "checks", ConnectionStringSetting = "constr", 
+            [CosmosDBTrigger("pets", "checks", ConnectionStringSetting = "constr",
                 CreateLeaseCollectionIfNotExists=true)] IReadOnlyList<Document> document,
             TraceWriter log)
         {
@@ -37,18 +40,77 @@ namespace PetCheckerFunction
                     var res = await httpClient.GetAsync(url);
                     var stream = await res.Content.ReadAsStreamAsync() as Stream;
                     log.Info($"--- Image succesfully downloaded from storage");
-                    (bool allowed, string message) = await PassesImageModerationAsync(stream, log);
+                    var (allowed, message, tags) = await PassesImageModerationAsync(stream, log);
                     log.Info($"--- Image analyzed. It was {(allowed ? string.Empty : "NOT")} approved");
                     doc.IsApproved = allowed;
                     doc.Message = message;
                     log.Info($"--- Updating CosmosDb document to have historical data");
                     await UpsertDocument(doc, log);
+                    log.Info($"--- Updating Grapgh");
+                    await InsertInGraph(tags, doc, log);
                     log.Info($"<<< Image in {url} processed!");
                 }
             }
 
         }
-        
+
+        private static async Task InsertInGraph(IEnumerable<string> tags, dynamic doc, TraceWriter log)
+        {
+
+
+            var hostname = Environment.GetEnvironmentVariable("gremlin_endpoint");
+            var port = Environment.GetEnvironmentVariable("gremlin_port");
+            var database = "pets";
+            var collection = "checkins";
+            var authKey = Environment.GetEnvironmentVariable("gremlin_key");
+            var portToUse = 443;
+            portToUse = int.TryParse(port, out portToUse) ? portToUse : 443;
+
+            var gremlinServer = new GremlinServer(hostname, portToUse, enableSsl: true,
+                                                username: "/dbs/" + database + "/colls/" + collection,
+                                                password: authKey);
+            var gremlinClient = new GremlinClient(gremlinServer, new GraphSON2Reader(), new GraphSON2Writer(), GremlinClient.GraphSON2MimeType);
+
+
+            foreach (var tag in tags)
+            {
+                log.Info("--- --- Checking vertex for tag " + tag);
+                await TryAddTag(gremlinClient, tag, log);
+            }
+
+            var queries = AddPetToGraphQueries(doc, tags);
+            log.Info("--- --- Adding vertex for pet checkin ");
+            foreach (string query in queries)
+            {
+                await gremlinClient.SubmitAsync<dynamic>(query);
+            }
+        }
+
+        private static async Task TryAddTag(GremlinClient gremlinClient, string tag, TraceWriter log)
+        {
+            var query = $"g.V('t_{tag}')";
+            var response = await gremlinClient.SubmitAsync<dynamic>(query);
+
+            if (!response.Any())
+            {
+                log.Info("--- --- Adding vertex for tag " + tag);
+                await gremlinClient.SubmitAsync<dynamic>(AddTagToGraphQuery(tag));
+            }
+        }
+
+        private static IEnumerable<string> AddPetToGraphQueries(dynamic doc, IEnumerable<string> tags)
+        {
+            var id = doc.id.ToString();
+
+            yield return $"g.addV('checkin').property('id','{id}')";
+            foreach (var tag in tags)
+            {
+                yield return $"g.V('{id}').addE('seems').to(g.V('t_{tag}'))";
+            }
+        }
+
+        private static string AddTagToGraphQuery(string tag) => $"g.addV('tag').property('id', 't_{tag}').property('value', '{tag}')";
+
         private static async Task UpsertDocument(dynamic doc, TraceWriter log)
         {
             var endpoint = Environment.GetEnvironmentVariable("cosmos_uri");
@@ -63,23 +125,31 @@ namespace PetCheckerFunction
             log.Info($"--- CosmosDb document updated.");
         }
 
-    
-        public static async Task<(bool, string)> PassesImageModerationAsync(Stream image, TraceWriter log)
+
+        public static async Task<(bool allowd, string message, string[] tags)> PassesImageModerationAsync(Stream image, TraceWriter log)
         {
-            log.Info("--- Creating VisionApi client and analyzing image");
-            var key = Environment.GetEnvironmentVariable("MicrosoftVisionApiKey");
-            var endpoint = Environment.GetEnvironmentVariable("MicrosoftVisionApiEndpoint");
-            var client = new VisionServiceClient(key, endpoint);
-            var features = new VisualFeature[] { VisualFeature.Description };
-            var result = await client.AnalyzeImageAsync(image, features);
-            log.Info($"--- Image analyzed with tags: {String.Join(",", result.Description.Tags)}");
-            if (!int.TryParse(Environment.GetEnvironmentVariable("MicrosoftVisionNumTags"), out var tagsToFetch))
+            try
             {
-                tagsToFetch = 5;
+                log.Info("--- Creating VisionApi client and analyzing image");
+                var key = Environment.GetEnvironmentVariable("MicrosoftVisionApiKey");
+                var endpoint = Environment.GetEnvironmentVariable("MicrosoftVisionApiEndpoint");
+                var client = new VisionServiceClient(key, endpoint);
+                var features = new VisualFeature[] { VisualFeature.Description };
+                var result = await client.AnalyzeImageAsync(image, features);
+                log.Info($"--- Image analyzed with tags: {String.Join(",", result.Description.Tags)}");
+                if (!int.TryParse(Environment.GetEnvironmentVariable("MicrosoftVisionNumTags"), out var tagsToFetch))
+                {
+                    tagsToFetch = 5;
+                }
+                var fetchedTags = result?.Description?.Tags.Take(tagsToFetch).ToArray() ?? new string[0];
+                bool isAllowed = fetchedTags.Contains("dog");
+                string message = result?.Description?.Captions.FirstOrDefault()?.Text;
+                return (isAllowed, message, fetchedTags);
             }
-            bool isAllowed = result.Description.Tags.Take(tagsToFetch).Contains("dog");
-            string message = result?.Description?.Captions.FirstOrDefault()?.Text;
-            return (isAllowed, message);
+            catch (Exception ex)
+            {
+                return (false, "error " + ex.Message, new string[0]);
+            }
         }
     }
 }
