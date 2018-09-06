@@ -34,25 +34,26 @@ namespace PetCheckerFunction
 
                 using (var httpClient = new HttpClient())
                 {
+                    var kvService = new KeyVault(log);
                     var res = await httpClient.GetAsync(url);
                     var stream = await res.Content.ReadAsStreamAsync() as Stream;
                     log.Info($"--- Image succesfully downloaded from storage");
-                    (bool allowed, string message) = await PassesImageModerationAsync(stream, log);
+                    (bool allowed, string message) = await PassesImageModerationAsync(stream, kvService, log);
                     log.Info($"--- Image analyzed. It was {(allowed ? string.Empty : "NOT")} approved");
                     doc.IsApproved = allowed;
                     doc.Message = message;
                     log.Info($"--- Updating CosmosDb document to have historical data");
-                    await UpsertDocument(doc, log);
+                    await UpsertDocument(doc, kvService, log);
                     log.Info($"<<< Image in {url} processed!");
                 }
             }
 
         }
         
-        private static async Task UpsertDocument(dynamic doc, TraceWriter log)
+        private static async Task UpsertDocument(dynamic doc, KeyVault kvService, TraceWriter log)
         {
-            var endpoint = Environment.GetEnvironmentVariable("cosmos_uri");
-            var auth = Environment.GetEnvironmentVariable("cosmos_key");
+            var endpoint = await GetSecret("cosmos_uri", kvService);
+            var auth = await GetSecret("cosmos_key", kvService);
 
             var client = new DocumentClient(new Uri(endpoint), auth);
             var dbName = "pets";
@@ -61,19 +62,28 @@ namespace PetCheckerFunction
             await client.UpsertDocumentAsync(
                 UriFactory.CreateDocumentCollectionUri(dbName, colName), doc);
             log.Info($"--- CosmosDb document updated.");
+        }   
+        
+        private static async Task<string> GetSecret(string secretName, KeyVault kvService)
+        {
+            var secretValue = await kvService.GetSecretValue(secretName);
+            return string.IsNullOrEmpty(secretValue) ?
+                Environment.GetEnvironmentVariable(secretName) : secretValue;
         }
-
     
-        public static async Task<(bool, string)> PassesImageModerationAsync(Stream image, TraceWriter log)
+        private static async Task<(bool, string)> PassesImageModerationAsync(Stream image, KeyVault kvService, TraceWriter log)
         {
             log.Info("--- Creating VisionApi client and analyzing image");
-            var key = Environment.GetEnvironmentVariable("MicrosoftVisionApiKey");
-            var endpoint = Environment.GetEnvironmentVariable("MicrosoftVisionApiEndpoint");
+
+            var key = await GetSecret("MicrosoftVisionApiKey", kvService);
+            var endpoint = await GetSecret("MicrosoftVisionApiEndpoint", kvService);
+            var numTags = await GetSecret("MicrosoftVisionNumTags", kvService);
             var client = new VisionServiceClient(key, endpoint);
             var features = new VisualFeature[] { VisualFeature.Description };
             var result = await client.AnalyzeImageAsync(image, features);
+
             log.Info($"--- Image analyzed with tags: {String.Join(",", result.Description.Tags)}");
-            if (!int.TryParse(Environment.GetEnvironmentVariable("MicrosoftVisionNumTags"), out var tagsToFetch))
+            if (!int.TryParse(numTags, out var tagsToFetch))
             {
                 tagsToFetch = 5;
             }

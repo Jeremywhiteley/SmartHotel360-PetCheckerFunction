@@ -8,6 +8,7 @@
     "constr": "PUT YOUT COSMOSDB CONNECTION STRING AccountEndpoint=....;",
     "MicrosoftVisionApiKey": "PUT YOUR VISION API KEY HERE",
     "MicrosoftVisionApiEndpoint": "PUT YOUR API ENDPOINT HERE (i. e. https://eastus2.api.cognitive.microsoft.com/vision/v1.0/)",
-    "MicrosoftVisionNumTags": "10"
+    "MicrosoftVisionNumTags": "10",
+    "KeyVaultUri": ""
   }
 }
