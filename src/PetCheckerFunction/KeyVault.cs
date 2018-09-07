@@ -11,16 +11,26 @@ namespace PetCheckerFunction
     {
         private KeyVaultClient _keyVaultClient;
         private TraceWriter _log;
+        private readonly string _keyVaultUri;
 
         public KeyVault(TraceWriter log)
         {
             var azureServiceTokenProvider = new AzureServiceTokenProvider();
             _keyVaultClient = new KeyVaultClient(new KeyVaultClient.AuthenticationCallback(azureServiceTokenProvider.KeyVaultTokenCallback));
             _log = log;
+            _keyVaultUri = Environment.GetEnvironmentVariable("KeyVaultUri");
+            if (string.IsNullOrEmpty(_keyVaultUri))
+            {
+                log.Info(">>> Key Vault not configured and won't be used");
+            }
         }
 
         public async Task<string> GetSecretValue(string secretName)
         {
+            if (string.IsNullOrEmpty(_keyVaultUri))
+            {
+                return string.Empty;
+            }
             try
             {
                 _log.Info($">>> Retrieving secret: {secretName} from Azure KeyVault");
@@ -31,7 +41,7 @@ namespace PetCheckerFunction
             catch (KeyVaultErrorException kex)
             {
                 _log.Error($"--- Error retrieving the secret { secretName }", kex);
-                return await Task.FromResult(string.Empty);
+                return string.Empty;
             }
         }
     }

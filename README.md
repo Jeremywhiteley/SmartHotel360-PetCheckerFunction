@@ -39,6 +39,9 @@ You need an Azure account to work with this demo code. You can:
 - Open an Azure account for free [Azure subscription](https://azure.com). You get credits that can be used to try out paid Azure services. Even after the credits are used up, you can keep the account and use free Azure services and features, such as the Web Apps feature in Azure App Service.
 - [Activate Visual Studio subscriber benefits](https://azure.microsoft.com/en-us/pricing/member-offers/credit-for-visual-studio-subscribers/). Your Visual Studio subscription gives you credits every month that you can use for paid Azure services.
 
+# Running the Pet Checker Azure Funcion
+
+You can [run the Azure Function locally or deploy it to Azure](./docs/run-af.md)
 
 # Blogs post and videos
 
