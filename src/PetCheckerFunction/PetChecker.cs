@@ -1,5 +1,4 @@
 using Gremlin.Net.Driver;
-using Gremlin.Net.Driver.Messages;
 using Gremlin.Net.Structure.IO.GraphSON;
 using Microsoft.Azure.Documents;
 using Microsoft.Azure.Documents.Client;
@@ -12,6 +11,7 @@ using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Threading.Tasks;
+
 
 namespace PetCheckerFunction
 {
@@ -37,29 +37,28 @@ namespace PetCheckerFunction
 
                 using (var httpClient = new HttpClient())
                 {
+                    var kvService = new KeyVault(log);
                     var res = await httpClient.GetAsync(url);
                     var stream = await res.Content.ReadAsStreamAsync() as Stream;
                     log.Info($"--- Image succesfully downloaded from storage");
-                    var (allowed, message, tags) = await PassesImageModerationAsync(stream, log);
+                    var (allowed, message, tags) = await PassesImageModerationAsync(stream, kvService, log);
                     log.Info($"--- Image analyzed. It was {(allowed ? string.Empty : "NOT")} approved");
                     doc.IsApproved = allowed;
                     doc.Message = message;
                     log.Info($"--- Updating CosmosDb document to have historical data");
-                    await UpsertDocument(doc, log);
+                    await UpsertDocument(doc, kvService, log);
                     log.Info($"--- Updating Grapgh");
-                    await InsertInGraph(tags, doc, log);
+                    await InsertInGraph(tags, doc, kvService, log);
                     log.Info($"<<< Image in {url} processed!");
                 }
             }
 
         }
 
-        private static async Task InsertInGraph(IEnumerable<string> tags, dynamic doc, TraceWriter log)
+        private static async Task InsertInGraph(IEnumerable<string> tags, dynamic doc, KeyVault kvService, TraceWriter log)
         {
-
-
-            var hostname = Environment.GetEnvironmentVariable("gremlin_endpoint");
-            var port = Environment.GetEnvironmentVariable("gremlin_port");
+            var hostname = await GetSecret("gremlin_endpoint", kvService);
+            var port = await GetSecret("gremlin_port", kvService);
             var database = "pets";
             var collection = "checkins";
             var authKey = Environment.GetEnvironmentVariable("gremlin_key");
@@ -70,8 +69,6 @@ namespace PetCheckerFunction
                                                 username: "/dbs/" + database + "/colls/" + collection,
                                                 password: authKey);
             var gremlinClient = new GremlinClient(gremlinServer, new GraphSON2Reader(), new GraphSON2Writer(), GremlinClient.GraphSON2MimeType);
-
-
             foreach (var tag in tags)
             {
                 log.Info("--- --- Checking vertex for tag " + tag);
@@ -111,10 +108,10 @@ namespace PetCheckerFunction
 
         private static string AddTagToGraphQuery(string tag) => $"g.addV('tag').property('id', 't_{tag}').property('value', '{tag}')";
 
-        private static async Task UpsertDocument(dynamic doc, TraceWriter log)
+        private static async Task UpsertDocument(dynamic doc, KeyVault kvService, TraceWriter log)
         {
-            var endpoint = Environment.GetEnvironmentVariable("cosmos_uri");
-            var auth = Environment.GetEnvironmentVariable("cosmos_key");
+            var endpoint = await GetSecret("cosmos_uri", kvService);
+            var auth = await GetSecret("cosmos_key", kvService);
 
             var client = new DocumentClient(new Uri(endpoint), auth);
             var dbName = "pets";
@@ -125,19 +122,28 @@ namespace PetCheckerFunction
             log.Info($"--- CosmosDb document updated.");
         }
 
+        private static async Task<string> GetSecret(string secretName, KeyVault kvService)
+        {
+            var secretValue = await kvService.GetSecretValue(secretName);
+            return string.IsNullOrEmpty(secretValue) ?
+                Environment.GetEnvironmentVariable(secretName) : secretValue;
+        }
 
-        public static async Task<(bool allowd, string message, string[] tags)> PassesImageModerationAsync(Stream image, TraceWriter log)
+        public static async Task<(bool allowd, string message, string[] tags)> PassesImageModerationAsync(Stream image, KeyVault kvService, TraceWriter log)
         {
             try
             {
                 log.Info("--- Creating VisionApi client and analyzing image");
-                var key = Environment.GetEnvironmentVariable("MicrosoftVisionApiKey");
-                var endpoint = Environment.GetEnvironmentVariable("MicrosoftVisionApiEndpoint");
+
+                var key = await GetSecret("MicrosoftVisionApiKey", kvService);
+                var endpoint = await GetSecret("MicrosoftVisionApiEndpoint", kvService);
+                var numTags = await GetSecret("MicrosoftVisionNumTags", kvService);
                 var client = new VisionServiceClient(key, endpoint);
                 var features = new VisualFeature[] { VisualFeature.Description };
                 var result = await client.AnalyzeImageAsync(image, features);
+
                 log.Info($"--- Image analyzed with tags: {String.Join(",", result.Description.Tags)}");
-                if (!int.TryParse(Environment.GetEnvironmentVariable("MicrosoftVisionNumTags"), out var tagsToFetch))
+                if (!int.TryParse(numTags, out var tagsToFetch))
                 {
                     tagsToFetch = 5;
                 }
