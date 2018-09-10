@@ -13,10 +13,20 @@ Open the solution `SmartHotel360.AzureFunction.sln` and edit the `local.settings
 * `MicrosoftVisionApiEndpoint`: Vision API endpoint (i. e. https://eastus2.api.cognitive.microsoft.com/vision/v1.0/)
 * `MicrosoftVisionNumTags`: Tags to fetch from Vision API
 * `KeyVaultUri`: Uri of the KeyVault to retrieve the secrets. **Leave it blank to not use key vault**
+* `AzureSignalRConnectionString`: Connection string to [Azure SignalR](https://azure.microsoft.com/en-us/services/signalr-service/) resource to use.
 
 ## Deploy to Azure
 
-To deploy the Azure Function to azure just publish it from Visual Studio followin the instructions in the "Publish to Azure" section of the [AF documentation](https://docs.microsoft.com/en-us/azure/azure-functions/functions-develop-vs).
+To deploy the Azure Function to azure just publish it from Visual Studio followin the instructions in the "Publish to Azure" section of the [AF documentation]
+(https://docs.microsoft.com/en-us/azure/azure-functions/functions-develop-vs).
+
+## Creating needed Azure resources
+
+AF needs some Azure resources to be created and setup:
+
+1. Create Azure SignalR by deploying the ARM script `./deploy/azure-signalr.json`
+2. Create CosmosDb by running the script `./deploy/03-deploy-cosmos.sh`
+3. (If wanted) Create the Azure Key Vault (more on this later).
 
 ## Using a Key Vault
 
