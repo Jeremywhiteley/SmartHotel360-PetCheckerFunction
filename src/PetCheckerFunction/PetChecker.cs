@@ -85,7 +85,7 @@ namespace PetCheckerFunction
 
         private static async Task TryAddTag(GremlinClient gremlinClient, string tag, TraceWriter log)
         {
-            var query = $"g.V('t_{tag}')";
+            var query = $"g.V('{tag}')";
             var response = await gremlinClient.SubmitAsync<dynamic>(query);
 
             if (!response.Any())
@@ -99,14 +99,16 @@ namespace PetCheckerFunction
         {
             var id = doc.id.ToString();
 
-            yield return $"g.addV('checkin').property('id','{id}')";
+            var msg = (doc.Message?.ToString() ?? "").Replace("'", "\'");
+
+            yield return $"g.addV('checkin').property('id','{id}').property('description','{msg}')";
             foreach (var tag in tags)
             {
-                yield return $"g.V('{id}').addE('seems').to(g.V('t_{tag}'))";
+                yield return $"g.V('{id}').addE('seems').to(g.V('{tag}'))";
             }
         }
 
-        private static string AddTagToGraphQuery(string tag) => $"g.addV('tag').property('id', 't_{tag}').property('value', '{tag}')";
+        private static string AddTagToGraphQuery(string tag) => $"g.addV('tag').property('id', '{tag}').property('value', '{tag}')";
 
         private static async Task UpsertDocument(dynamic doc, KeyVault kvService, TraceWriter log)
         {
