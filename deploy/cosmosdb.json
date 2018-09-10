@@ -1,0 +1,45 @@
+{
+    "$schema": "http://schema.management.azure.com/schemas/2014-04-01-preview/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "name": {
+            "type": "String"
+        }
+    },
+    "variables": {
+        "docdbName": "[concat(parameters('name'),'-doc-', uniqueString(resourceGroup().Id))]",
+        "graphdbName": "[concat(parameters('name'),'-graph-', uniqueString(resourceGroup().Id))]"
+    },
+    "resources": [
+        {
+            "type": "Microsoft.DocumentDB/databaseAccounts",
+            "kind": "GlobalDocumentDB",
+            "name": "[variables('docdbName')]",
+            "apiVersion": "2015-04-08",
+            "location": "[resourceGroup().location]",
+            "tags": {
+                "defaultExperience": "DocumentDB"
+            },
+            "properties": {
+                "name": "[variables('docdbName')]",
+                "databaseAccountOfferType": "Standard"
+            },
+            "dependsOn": []
+        },
+        {
+            "type": "Microsoft.DocumentDB/databaseAccounts",
+            "kind": "GlobalDocumentDB",
+            "name": "[variables('graphdbName')]",
+            "apiVersion": "2015-04-08",
+            "location": "[resourceGroup().location]",
+            "tags": {
+                "defaultExperience": "Graph"
+            },
+            "properties": {
+                "name": "[variables('graphdbName')]",
+                "databaseAccountOfferType": "Standard"
+            },
+            "dependsOn": []            
+        }
+    ]
+}
