@@ -3,12 +3,15 @@
   "Values": {
     "AzureWebJobsStorage": "PUT STORAGE CONNECTION STRING",
     "AzureWebJobsDashboard": "",
-    "cosmos_uri": "https://your-cosmosdb-uri-here.documents.azure.com:443/",
-    "cosmos_key": "PUT YOUR COSMOSDB KEY HERE",
-    "constr": "PUT YOUT COSMOSDB CONNECTION STRING AccountEndpoint=....;",
-    "MicrosoftVisionApiKey": "PUT YOUR VISION API KEY HERE",
-    "MicrosoftVisionApiEndpoint": "PUT YOUR API ENDPOINT HERE (i. e. https://eastus2.api.cognitive.microsoft.com/vision/v1.0/)",
+    "cosmos_uri": "COSMOSDB SQL URI",
+    "cosmos_key": "COSMOSDB SQL KEY" ,
+    "constr": "COSMOSDB SQL CONNECTION STRING",
+    "MicrosoftVisionApiKey": "API KEY FOR VISION",
+    "MicrosoftVisionApiEndpoint": "VISION ENDPOINT (i. e. https://eastus.api.cognitive.microsoft.com/vision/v1.0)",
     "MicrosoftVisionNumTags": "10",
+    "gremlin_endpoint": "GREMLIN ENDPOINT OF COSMOSDB",
+    "gremlin_port": "443",
+    "gremlin_key": "COSMOSDB GREMLIN KEY",
     "KeyVaultUri": ""
   }
 }
