@@ -1,9 +1,13 @@
 using Gremlin.Net.Driver;
 using Gremlin.Net.Structure.IO.GraphSON;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Documents;
 using Microsoft.Azure.Documents.Client;
 using Microsoft.Azure.WebJobs;
+using Microsoft.Azure.WebJobs.Extensions.Http;
+using Microsoft.Azure.WebJobs.Extensions.SignalRService;
 using Microsoft.Azure.WebJobs.Host;
+using Microsoft.Build.Framework;
 using Microsoft.ProjectOxford.Vision;
 using System;
 using System.Collections.Generic;
@@ -20,7 +24,8 @@ namespace PetCheckerFunction
         [FunctionName("PetChecker")]
         public static async Task RunPetChecker(
             [CosmosDBTrigger("pets", "checks", ConnectionStringSetting = "constr",
-                CreateLeaseCollectionIfNotExists=true)] IReadOnlyList<Document> document,
+            CreateLeaseCollectionIfNotExists=true)] IReadOnlyList<Document> document,
+            [SignalR(HubName = "petcheckin", ConnectionStringSetting = "AzureSignalRConnectionString")] IAsyncCollector<SignalRMessage> sender,
             TraceWriter log)
         {
             foreach (dynamic doc in document)
@@ -49,9 +54,25 @@ namespace PetCheckerFunction
                     await UpsertDocument(doc, kvService, log);
                     log.Info($"--- Updating Grapgh");
                     await InsertInGraph(tags, doc, kvService, log);
-                    log.Info($"<<< Image in {url} processed!");
+                    log.Info("--- Sending SignalR response.");
+                    await SendSignalRResponse(sender, allowed, message);
+                    log.Info($"<<< Done! Image in {url} processed!");
+
                 }
             }
+        }
+
+        private static Task SendSignalRResponse(IAsyncCollector<SignalRMessage> sender, bool isOk, string message)
+        {
+            return sender.AddAsync(new SignalRMessage()
+            {
+                Target = "ProcessDone",
+                Arguments = new[] { new {
+                    processedAt = DateTime.UtcNow,
+                    accepted = isOk,
+                    message
+                }}
+            });
 
         }
 
@@ -159,5 +180,16 @@ namespace PetCheckerFunction
                 return (false, "error " + ex.Message, new string[0]);
             }
         }
+
+        [FunctionName(nameof(SignalRInfo))]
+        public static IActionResult SignalRInfo(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post")]HttpRequestMessage req,
+        [SignalRConnectionInfo(HubName = "petcheckin")] SignalRConnectionInfo info, ILogger logger)
+        {
+            return info != null
+                ? (ActionResult)new OkObjectResult(info)
+                : new NotFoundObjectResult("Failed to load SignalR Info.");
+        }
+
     }
 }
