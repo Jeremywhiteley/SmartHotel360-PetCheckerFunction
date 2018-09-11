@@ -81,7 +81,7 @@ namespace PetCheckerFunction
             var hostname = await GetSecret("gremlin_endpoint", kvService);
             var port = await GetSecret("gremlin_port", kvService);
             var database = "pets";
-            var collection = "checkins";
+            var collection = "checks";
             var authKey = Environment.GetEnvironmentVariable("gremlin_key");
             var portToUse = 443;
             portToUse = int.TryParse(port, out portToUse) ? portToUse : 443;
