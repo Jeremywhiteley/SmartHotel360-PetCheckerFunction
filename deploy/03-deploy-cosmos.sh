@@ -45,7 +45,7 @@ for cdb in $cdbNames; do
   if [[ $cdb = *"-graph-"* ]]; then
     echo "Creating empty graph in $cdb"
     az cosmosdb database create --name $cdb -g $rgName --db-name pets
-    az cosmosdb collection create --name $cdb -g $rgName --db-name pets --collection-name checkins --throughput 10000
+    az cosmosdb collection create --name $cdb -g $rgName --db-name pets --collection-name checks --throughput 10000
   fi
 done
 
