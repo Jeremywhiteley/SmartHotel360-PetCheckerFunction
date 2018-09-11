@@ -184,7 +184,7 @@ namespace PetCheckerFunction
         [FunctionName(nameof(SignalRInfo))]
         public static IActionResult SignalRInfo(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post")]HttpRequestMessage req,
-        [SignalRConnectionInfo(HubName = "petcheckin")] SignalRConnectionInfo info, ILogger logger)
+        [SignalRConnectionInfo(HubName = "petcheckin")] SignalRConnectionInfo info)
         {
             return info != null
                 ? (ActionResult)new OkObjectResult(info)
