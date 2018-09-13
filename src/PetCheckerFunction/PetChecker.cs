@@ -7,7 +7,6 @@ using Microsoft.Azure.WebJobs;
 using Microsoft.Azure.WebJobs.Extensions.Http;
 using Microsoft.Azure.WebJobs.Extensions.SignalRService;
 using Microsoft.Azure.WebJobs.Host;
-using Microsoft.Build.Framework;
 using Microsoft.ProjectOxford.Vision;
 using System;
 using System.Collections.Generic;
@@ -28,37 +27,61 @@ namespace PetCheckerFunction
             [SignalR(HubName = "petcheckin", ConnectionStringSetting = "AzureSignalRConnectionString")] IAsyncCollector<SignalRMessage> sender,
             TraceWriter log)
         {
-            foreach (dynamic doc in document)
+            var sendingResponse = false;
+            try
             {
-                var isProcessed = doc.IsApproved != null;
-                if (isProcessed)
+                foreach (dynamic doc in document)
                 {
-                    continue;
+                    sendingResponse = false;
+                    var isProcessed = doc.IsApproved != null;
+                    if (isProcessed)
+                    {
+                        continue;
+                    }
+
+                    var url = doc.MediaUrl.ToString();
+                    var uploaded = (DateTime)doc.Created;
+                    log.Info($">>> Processing image in {url} upladed at {uploaded.ToString()}");
+
+                    using (var httpClient = new HttpClient())
+                    {
+                        var kvService = new KeyVault(log);
+                        var res = await httpClient.GetAsync(url);
+                        var stream = await res.Content.ReadAsStreamAsync() as Stream;
+                        log.Info($"--- Image succesfully downloaded from storage");
+                        var (allowed, message, tags) = await PassesImageModerationAsync(stream, kvService, log);
+                        log.Info($"--- Image analyzed. It was {(allowed ? string.Empty : "NOT")} approved");
+                        doc.IsApproved = allowed;
+                        doc.Message = message;
+                        log.Info($"--- Updating CosmosDb document to have historical data");
+                        await UpsertDocument(doc, kvService, log);
+                        log.Info($"--- Updating Grapgh");
+                        await InsertInGraph(tags, doc, kvService, log);
+                        log.Info("--- Sending SignalR response.");
+                        sendingResponse = true;
+                        await SendSignalRResponse(sender, allowed, message);
+                        log.Info($"<<< Done! Image in {url} processed!");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                var msg = $"Error {ex.Message} ({ex.GetType().Name})";
+                log.Info("!!! " + msg);
+
+                if (ex is AggregateException aggex)
+                {
+                    foreach (var innex in aggex.InnerExceptions)
+                    {
+                        log.Info($"!!! (inner) Error {innex.Message} ({innex.GetType().Name})");
+                    }
                 }
 
-                var url = doc.MediaUrl;
-                var uploaded = (DateTime)doc.Created;
-                log.Info($">>> Processing image in {url} upladed at {uploaded.ToString()}");
-
-                using (var httpClient = new HttpClient())
+                if (!sendingResponse)
                 {
-                    var kvService = new KeyVault(log);
-                    var res = await httpClient.GetAsync(url);
-                    var stream = await res.Content.ReadAsStreamAsync() as Stream;
-                    log.Info($"--- Image succesfully downloaded from storage");
-                    var (allowed, message, tags) = await PassesImageModerationAsync(stream, kvService, log);
-                    log.Info($"--- Image analyzed. It was {(allowed ? string.Empty : "NOT")} approved");
-                    doc.IsApproved = allowed;
-                    doc.Message = message;
-                    log.Info($"--- Updating CosmosDb document to have historical data");
-                    await UpsertDocument(doc, kvService, log);
-                    log.Info($"--- Updating Grapgh");
-                    await InsertInGraph(tags, doc, kvService, log);
-                    log.Info("--- Sending SignalR response.");
-                    await SendSignalRResponse(sender, allowed, message);
-                    log.Info($"<<< Done! Image in {url} processed!");
-
+                    await SendSignalRResponse(sender, false, msg);
                 }
+                throw ex;
             }
         }
 
