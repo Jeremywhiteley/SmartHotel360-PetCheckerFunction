@@ -1,0 +1,31 @@
+{
+    "$schema": "http://schema.management.azure.com/schemas/2014-04-01-preview/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "name": {
+            "type": "String"
+        },
+        "location": {
+            "type": "String"
+        },
+        "apiType": {
+            "type": "String"
+        },
+        "sku": {
+            "type": "String"
+        }
+    },
+    "resources": [
+        {
+            "type": "Microsoft.CognitiveServices/accounts",
+            "sku": {
+                "name": "[parameters('sku')]"
+            },
+            "kind": "[parameters('apiType')]",
+            "name": "[parameters('name')]",
+            "apiVersion": "2016-02-01-preview",
+            "location": "[parameters('location')]",
+            "properties": {}
+        }
+    ]
+}
