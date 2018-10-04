@@ -55,7 +55,7 @@ namespace PetCheckerFunction
                         doc.Message = message;
                         log.Info($"--- Updating CosmosDb document to have historical data");
                         await UpsertDocument(doc, kvService, log);
-                        log.Info($"--- Updating Grapgh");
+                        log.Info($"--- Updating Graph");
                         await InsertInGraph(tags, doc, kvService, log);
                         log.Info("--- Sending SignalR response.");
                         sendingResponse = true;
@@ -200,6 +200,7 @@ namespace PetCheckerFunction
             }
             catch (Exception ex)
             {
+                log.Info("Vision API error! " + ex.Message);
                 return (false, "error " + ex.Message, new string[0]);
             }
         }
